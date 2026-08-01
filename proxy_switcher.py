@@ -588,8 +588,12 @@ class ProxySwitcherPro(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setFocusPolicy(Qt.NoFocus)
+        self.table.itemDoubleClicked.connect(self.on_proxy_double_click)
         self.setup_table_context_menu()
         layout.addWidget(self.table)
+
 
         # прогресс
         self.progress_bar = QProgressBar()
@@ -948,11 +952,25 @@ class ProxySwitcherPro(QMainWindow):
             self.refresh_table()
             self.save_proxies()
 
+    def on_proxy_double_click(self, item):
+        """Двойной клик по прокси - включить/выключить"""
+        row = item.row()
+        if row < 0 or row >= len(self.proxies):
+            return
+
+        # если этот прокси уже активен - выключаем
+        if self.proxy_enabled and self.active_proxy == row:
+            self.disable_proxy()
+        else:
+            self.table.setCurrentCell(row, 0)
+            self.enable_proxy()
+
     def toggle_proxy(self):
         if self.proxy_enabled:
             self.disable_proxy()
         else:
             self.enable_proxy()
+
 
     def enable_proxy(self):
         if not IS_WINDOWS:
