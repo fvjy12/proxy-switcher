@@ -70,7 +70,9 @@ PROXY_SOURCES = [
     "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt",
     "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/Socks4.txt",
     "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt",
+    "https://free-proxy-list.net/",
 ]
+
 
 logger.info(f"Загружено {len(PROXY_SOURCES)} источников прокси")
 
