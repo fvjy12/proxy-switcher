@@ -1154,17 +1154,10 @@ class ProxySwitcherPro(QMainWindow):
 # ============================================================
 def main():
     app = QApplication(sys.argv)
-
-    splash = SplashScreen()
-    splash.show()
-
-    def create_main_window():
-        window = ProxySwitcherPro()
-        window.show()
-        return window
-
-    splash.finished.connect(create_main_window)
+    window = ProxySwitcherPro()
+    window.show()
     sys.exit(app.exec_())
+
 
 
 if __name__ == "__main__":
