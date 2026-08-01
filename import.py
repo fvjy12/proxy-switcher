@@ -1,31 +1,20 @@
 #!/usr/bin/env python3
-"""
-Proxy Switcher Pro - Import Module
-Version 2.0.0
-
-This module provides functions for importing proxies from various sources:
-- Text files (IP:PORT format)
-- JSON files
-- CSV files
-- URLs
-"""
+# Модуль импорта прокси для Proxy Switcher Pro
 
 import re
 import json
 import csv
 from pathlib import Path
-from typing import List, Dict, Optional
 
 import requests
 
 
-def parse_proxy_line(line: str) -> Optional[Dict]:
-    """Parse a single proxy line in IP:PORT format"""
+def parse_proxy_line(line):
+    """Разбирает строку вида IP:PORT"""
     line = line.strip()
     if not line:
         return None
 
-    # Match IP:PORT
     pattern = r'(\d+\.\d+\.\d+\.\d+):(\d+)'
     match = re.search(pattern, line)
     if not match:
@@ -33,32 +22,25 @@ def parse_proxy_line(line: str) -> Optional[Dict]:
 
     ip, port = match.groups()
 
-    # Determine proxy type
-    proxy_type = 'HTTP'
-    line_lower = line.lower()
-    if 'socks5' in line_lower:
-        proxy_type = 'SOCKS5'
-    elif 'socks4' in line_lower:
-        proxy_type = 'SOCKS4'
-    elif 'https' in line_lower:
-        proxy_type = 'HTTPS'
+    # определяем тип
+    ptype = 'HTTP'
+    low = line.lower()
+    if 'socks5' in low:
+        ptype = 'SOCKS5'
+    elif 'socks4' in low:
+        ptype = 'SOCKS4'
+    elif 'https' in low:
+        ptype = 'HTTPS'
 
     return {
-        'ip': ip,
-        'port': port,
-        'type': proxy_type,
-        'name': f"Proxy_{ip}",
-        'login': '',
-        'password': '',
-        'status': 'fresh',
-        'speed': '',
-        'anonymity': 'unknown',
-        'country': '🌍',
+        'ip': ip, 'port': port, 'type': ptype,
+        'name': f"Proxy_{ip}", 'login': '', 'password': '',
+        'status': 'fresh', 'speed': '', 'anonymity': 'unknown', 'country': '🌍',
     }
 
 
-def import_from_text(text: str) -> List[Dict]:
-    """Import proxies from raw text"""
+def import_from_text(text):
+    """Импорт из текста"""
     proxies = []
     seen = set()
 
@@ -73,11 +55,11 @@ def import_from_text(text: str) -> List[Dict]:
     return proxies
 
 
-def import_from_file(filepath: str) -> List[Dict]:
-    """Import proxies from a file (txt, json, csv)"""
+def import_from_file(filepath):
+    """Импорт из файла (txt, json, csv)"""
     path = Path(filepath)
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {filepath}")
+        raise FileNotFoundError(f"Файл не найден: {filepath}")
 
     suffix = path.suffix.lower()
 
@@ -86,13 +68,12 @@ def import_from_file(filepath: str) -> List[Dict]:
     elif suffix == '.csv':
         return import_from_csv(path)
     else:
-        # Default to text
         with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             return import_from_text(f.read())
 
 
-def import_from_json(path: Path) -> List[Dict]:
-    """Import proxies from JSON file"""
+def import_from_json(path):
+    """Импорт из JSON"""
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
@@ -108,9 +89,8 @@ def import_from_json(path: Path) -> List[Dict]:
                     key = f"{ip}:{port}"
                     if key not in seen:
                         seen.add(key)
-                        proxy = {
-                            'ip': ip,
-                            'port': str(port),
+                        proxies.append({
+                            'ip': ip, 'port': str(port),
                             'type': item.get('type', 'HTTP'),
                             'name': item.get('name', f"Proxy_{ip}"),
                             'login': item.get('login', ''),
@@ -119,8 +99,7 @@ def import_from_json(path: Path) -> List[Dict]:
                             'speed': item.get('speed', ''),
                             'anonymity': item.get('anonymity', 'unknown'),
                             'country': item.get('country', '🌍'),
-                        }
-                        proxies.append(proxy)
+                        })
             elif isinstance(item, str):
                 proxy = parse_proxy_line(item)
                 if proxy:
@@ -132,8 +111,8 @@ def import_from_json(path: Path) -> List[Dict]:
     return proxies
 
 
-def import_from_csv(path: Path) -> List[Dict]:
-    """Import proxies from CSV file"""
+def import_from_csv(path):
+    """Импорт из CSV"""
     proxies = []
     seen = set()
 
@@ -147,33 +126,26 @@ def import_from_csv(path: Path) -> List[Dict]:
                     key = f"{ip}:{port}"
                     if key not in seen:
                         seen.add(key)
-                        proxy_type = row[2].strip().upper() if len(row) > 2 else 'HTTP'
+                        ptype = row[2].strip().upper() if len(row) > 2 else 'HTTP'
                         proxies.append({
-                            'ip': ip,
-                            'port': port,
-                            'type': proxy_type,
-                            'name': f"Proxy_{ip}",
-                            'login': '',
-                            'password': '',
-                            'status': 'fresh',
-                            'speed': '',
-                            'anonymity': 'unknown',
-                            'country': '🌍',
+                            'ip': ip, 'port': port, 'type': ptype,
+                            'name': f"Proxy_{ip}", 'login': '', 'password': '',
+                            'status': 'fresh', 'speed': '', 'anonymity': 'unknown', 'country': '🌍',
                         })
 
     return proxies
 
 
-def import_from_url(url: str, timeout: int = 10) -> List[Dict]:
-    """Import proxies from a URL"""
+def import_from_url(url, timeout=10):
+    """Импорт с URL"""
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    response = requests.get(url, headers=headers, timeout=timeout)
-    response.raise_for_status()
-    return import_from_text(response.text)
+    r = requests.get(url, headers=headers, timeout=timeout)
+    r.raise_for_status()
+    return import_from_text(r.text)
 
 
-def merge_proxies(existing: List[Dict], new: List[Dict]) -> List[Dict]:
-    """Merge two proxy lists, removing duplicates"""
+def merge_proxies(existing, new):
+    """Объединяет два списка прокси, убирая дубликаты"""
     seen = set()
     result = []
 
@@ -187,9 +159,8 @@ def merge_proxies(existing: List[Dict], new: List[Dict]) -> List[Dict]:
 
 
 if __name__ == "__main__":
-    # Example usage
     sample = "192.168.1.1:8080\n10.0.0.1:3128\n"
     proxies = import_from_text(sample)
-    print(f"Imported {len(proxies)} proxies:")
+    print(f"Импортировано {len(proxies)} прокси:")
     for p in proxies:
         print(f"  {p['ip']}:{p['port']} ({p['type']})")
