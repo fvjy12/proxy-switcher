@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Proxy Switcher Pro - управление прокси
-# v2.1.0
 
 import sys
 import os
@@ -20,7 +18,6 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-# логирование
 try:
     from loguru import logger
     LOGURU = True
@@ -42,7 +39,6 @@ if LOGURU:
 
 logger.info("Proxy Switcher Pro v2.1.0 - запуск")
 
-# PySocks нужен requests для проверки SOCKS-прокси (pip install pysocks)
 try:
     import socks
     SOCKS_SUPPORTED = True
@@ -63,8 +59,6 @@ try:
 except Exception as e:
     logger.error(f"Ошибка конфигурации: {e}")
 
-# источники прокси: (url, тип). Тип - подсказка; для списков с префиксами
-# (http://, socks5://) реальный протокол определяется по строке
 PROXY_SOURCES = [
     ("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all&format=textplain", "HTTP"),
     ("https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt", "HTTP"),
@@ -81,19 +75,14 @@ PROXY_SOURCES = [
     ("https://raw.githubusercontent.com/hookzof/socks5_list/master/txt/proxy.txt", "SOCKS5"),
     ("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt", "SOCKS4"),
     ("https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/Socks4.txt", "SOCKS4"),
-    # смешанный список: протокол берётся из префикса каждой строки
+
     ("https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt", "HTTP"),
-    # JSON API: отдаёт ip, port и список протоколов
+
     ("https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc", "JSON"),
 ]
 
-
 logger.info(f"Загружено {len(PROXY_SOURCES)} источников прокси")
 
-
-# ============================================================
-# Тема (чёрно-белая)
-# ============================================================
 THEMES = {
     'dark': {
         'BG': '#1a1a1a', 'BG_ALT': '#2d2d2d', 'BG_HOVER': '#3d3d3d',
@@ -117,7 +106,7 @@ THEMES = {
 
 
 class Theme:
-    # значения по умолчанию = тёмная тема; подменяются через Theme.set()
+
     BG = "#1a1a1a"
     BG_ALT = "#2d2d2d"
     BG_HOVER = "#3d3d3d"
@@ -192,10 +181,6 @@ class Theme:
             QMessageBox {{ background-color: {Theme.BG}; }}
         """
 
-
-# ============================================================
-# Локализация
-# ============================================================
 LANGS = {
     'ru': {
         'window_title': 'Proxy Switcher Pro v{v}',
@@ -435,7 +420,6 @@ class ProxyGrabber(QThread):
         self.seen = set()
         logger.info(f"[GRABBER] Инициализирован (max={max_proxies})")
 
-    # ip:port | scheme://ip:port | user:pass@ip:port | scheme://user:pass@ip:port
     PROXY_LINE_RE = re.compile(
         r'^(?:(?P<scheme>https?|socks4a?|socks5h?)://)?'
         r'(?:(?P<user>[^:@/\s]+):(?P<pass>[^@\s]+)@)?'
@@ -603,8 +587,6 @@ class ProxyGrabber(QThread):
                 self.progress.emit(int((done / total) * 100), f"Источники {done}/{total}")
                 results.append(future.result())
 
-        # round-robin по источникам, чтобы типы и источники подмешивались равномерно,
-        # а не только те, что скачались первыми
         pool = [iter(lst) for lst in results if lst]
         while self._is_running and pool:
             alive_iterators = []
@@ -622,9 +604,6 @@ class ProxyGrabber(QThread):
         self.finished.emit(self.found_proxies)
 
 
-# ============================================================
-# Проверка прокси
-# ============================================================
 class ProxyChecker(QThread):
     progress = pyqtSignal(int, str)
     proxy_checked = pyqtSignal(int, dict)
@@ -650,7 +629,6 @@ class ProxyChecker(QThread):
         if not ip or not port:
             return results
 
-        # проверяем доступность порта
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(1)
@@ -694,7 +672,7 @@ class ProxyChecker(QThread):
 
         elif ptype in ['SOCKS4', 'SOCKS5']:
             if SOCKS_SUPPORTED:
-                # реальная проверка через requests: убеждаемся, что это действительно SOCKS
+
                 scheme = 'socks5' if ptype == 'SOCKS5' else 'socks4'
                 try:
                     proxy_str = f"{scheme}://{ip}:{port}"
@@ -717,7 +695,7 @@ class ProxyChecker(QThread):
                 except Exception:
                     results['status'] = 'dead'
             else:
-                # fallback без PySocks: только проверка открытого порта
+
                 try:
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(2)
@@ -738,7 +716,7 @@ class ProxyChecker(QThread):
         return results
 
     def _get_country_by_ip(self, ip):
-        # пробуем несколько сервисов
+
         try:
             r = requests.get(f'http://ip-api.com/json/{ip}', timeout=1)
             if r.status_code == 200:
@@ -799,9 +777,6 @@ class ProxyChecker(QThread):
         self.finished.emit(self.proxies)
 
 
-# ============================================================
-# Главное окно
-# ============================================================
 class ProxySwitcherPro(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -849,7 +824,6 @@ class ProxySwitcherPro(QMainWindow):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
-        # верхняя панель
         top = QHBoxLayout()
         self.title_label = QLabel(tr('app_title', v=VERSION))
         self.title_label.setObjectName("title")
@@ -868,7 +842,6 @@ class ProxySwitcherPro(QMainWindow):
         top.addWidget(self.status_btn)
         layout.addLayout(top)
 
-        # кнопки
         btns = QHBoxLayout()
         button_defs = [
             ('grab', self.grab_proxies),
@@ -888,7 +861,6 @@ class ProxySwitcherPro(QMainWindow):
             self._action_buttons.append((btn, key))
         layout.addLayout(btns)
 
-        # таблица
         self.table = QTableWidget()
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
@@ -896,8 +868,7 @@ class ProxySwitcherPro(QMainWindow):
             tr('col_status'), tr('col_speed'), tr('col_anon'), tr('col_country'),
         ])
         self.table.horizontalHeader().setStretchLastSection(True)
-        # встроенный вертикальный заголовок дублирует нашу колонку "№",
-        # а его уголок не красится темой - скрываем
+
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -908,14 +879,11 @@ class ProxySwitcherPro(QMainWindow):
         self.setup_table_context_menu()
         layout.addWidget(self.table)
 
-
-        # прогресс
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximumHeight(25)
         layout.addWidget(self.progress_bar)
 
-        # нижняя панель: шестерёнка настроек слева + статистика
         bottom = QHBoxLayout()
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setFixedSize(44, 32)
@@ -959,7 +927,7 @@ class ProxySwitcherPro(QMainWindow):
 
         lang_combo = QComboBox()
         lang_keys = list(LANGS.keys())
-        # названия языков всегда показываются на самом языке
+
         lang_combo.addItems(['Русский' if k == 'ru' else 'English' for k in lang_keys])
         cur_lang = self.settings.get('lang', 'ru')
         if cur_lang in lang_keys:
@@ -1210,7 +1178,7 @@ class ProxySwitcherPro(QMainWindow):
 
     def on_grab_finished(self, proxies):
         self.proxies.extend(proxies)
-        # убираем дубликаты
+
         seen = set()
         unique = []
         for p in self.proxies:
@@ -1390,7 +1358,6 @@ class ProxySwitcherPro(QMainWindow):
         if row < 0 or row >= len(self.proxies):
             return
 
-        # если этот прокси уже активен - выключаем
         if self.proxy_enabled and self.active_proxy == row:
             self.disable_proxy()
         else:
@@ -1402,7 +1369,6 @@ class ProxySwitcherPro(QMainWindow):
             self.disable_proxy()
         else:
             self.enable_proxy()
-
 
     def enable_proxy(self, silent=False):
         if not IS_WINDOWS:
@@ -1424,7 +1390,7 @@ class ProxySwitcherPro(QMainWindow):
             import ctypes
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-            # SOCKS в реестре Windows задаётся как "socks=host:port", иначе система примет его за HTTP-прокси
+
             if proxy.get('type', 'HTTP').upper().startswith('SOCKS'):
                 proxy_server = f"socks={proxy['ip']}:{proxy['port']}"
             else:
@@ -1480,7 +1446,6 @@ class ProxySwitcherPro(QMainWindow):
         if not alive:
             return
 
-        # исключаем текущий активный прокси, чтобы ротация реально переключала
         candidates = [i for i in alive if i != self.active_proxy] or alive
 
         next_idx = random.choice(candidates)
@@ -1606,9 +1571,6 @@ class ProxySwitcherPro(QMainWindow):
         QMessageBox.information(self, tr('success_title'), tr('copied', p=proxy_str))
 
 
-# ============================================================
-# Запуск
-# ============================================================
 def main():
     app = QApplication(sys.argv)
     window = ProxySwitcherPro()
@@ -1616,8 +1578,5 @@ def main():
     sys.exit(app.exec_())
 
 
-
 if __name__ == "__main__":
     main()
-
-
