@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Proxy Switcher Pro - управление прокси
-# v2.0.0
+# v2.1.0
 
 import sys
 import os
@@ -40,10 +40,18 @@ if LOGURU:
     except:
         pass
 
-logger.info("Proxy Switcher Pro v2.0.0 - запуск")
+logger.info("Proxy Switcher Pro v2.1.0 - запуск")
+
+# PySocks нужен requests для проверки SOCKS-прокси (pip install pysocks)
+try:
+    import socks
+    SOCKS_SUPPORTED = True
+except ImportError:
+    SOCKS_SUPPORTED = False
+    logger.warning("PySocks не установлен - SOCKS-прокси будут проверяться только по TCP-порту")
 
 APP_NAME = "Proxy Switcher Pro"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 CONFIG_DIR = Path.home() / "Documents" / "ProxySwitcher"
 CONFIG_FILE = CONFIG_DIR / "proxies.json"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
@@ -55,22 +63,28 @@ try:
 except Exception as e:
     logger.error(f"Ошибка конфигурации: {e}")
 
-# источники прокси
+# источники прокси: (url, тип). Тип - подсказка; для списков с префиксами
+# (http://, socks5://) реальный протокол определяется по строке
 PROXY_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all&format=textplain",
-    "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
-    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
-    "https://www.sslproxies.org/",
-    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all&format=textplain",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/Socks5.txt",
-    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
-    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt",
-    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/Socks4.txt",
-    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt",
-    "https://free-proxy-list.net/",
+    ("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all&format=textplain", "HTTP"),
+    ("https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt", "HTTP"),
+    ("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt", "HTTP"),
+    ("https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt", "HTTP"),
+    ("https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt", "HTTP"),
+    ("https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt", "HTTP"),
+    ("https://www.sslproxies.org/", "HTTP"),
+    ("https://www.free-proxy-list.net/", "HTTP"),
+    ("https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all&format=textplain", "SOCKS5"),
+    ("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt", "SOCKS5"),
+    ("https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/Socks5.txt", "SOCKS5"),
+    ("https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt", "SOCKS5"),
+    ("https://raw.githubusercontent.com/hookzof/socks5_list/master/txt/proxy.txt", "SOCKS5"),
+    ("https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt", "SOCKS4"),
+    ("https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/Socks4.txt", "SOCKS4"),
+    # смешанный список: протокол берётся из префикса каждой строки
+    ("https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt", "HTTP"),
+    # JSON API: отдаёт ip, port и список протоколов
+    ("https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc", "JSON"),
 ]
 
 
@@ -80,7 +94,30 @@ logger.info(f"Загружено {len(PROXY_SOURCES)} источников пр�
 # ============================================================
 # Тема (чёрно-белая)
 # ============================================================
+THEMES = {
+    'dark': {
+        'BG': '#1a1a1a', 'BG_ALT': '#2d2d2d', 'BG_HOVER': '#3d3d3d',
+        'FG': '#ffffff', 'FG_DIM': '#aaaaaa', 'FG_DARK': '#666666',
+        'BORDER': '#444444', 'SUCCESS': '#4caf50', 'WARNING': '#ff9800',
+        'ERROR': '#f44336', 'SELECTION': '#555555',
+    },
+    'light': {
+        'BG': '#f5f5f5', 'BG_ALT': '#ffffff', 'BG_HOVER': '#e2e2e2',
+        'FG': '#1a1a1a', 'FG_DIM': '#5f6368', 'FG_DARK': '#9aa0a6',
+        'BORDER': '#c4c7c5', 'SUCCESS': '#188038', 'WARNING': '#e37400',
+        'ERROR': '#d93025', 'SELECTION': '#a8c7fa',
+    },
+    'blue': {
+        'BG': '#0d1117', 'BG_ALT': '#161b22', 'BG_HOVER': '#21262d',
+        'FG': '#e6edf3', 'FG_DIM': '#8b949e', 'FG_DARK': '#484f58',
+        'BORDER': '#30363d', 'SUCCESS': '#3fb950', 'WARNING': '#d29922',
+        'ERROR': '#f85149', 'SELECTION': '#2f5496',
+    },
+}
+
+
 class Theme:
+    # значения по умолчанию = тёмная тема; подменяются через Theme.set()
     BG = "#1a1a1a"
     BG_ALT = "#2d2d2d"
     BG_HOVER = "#3d3d3d"
@@ -92,6 +129,11 @@ class Theme:
     WARNING = "#ff9800"
     ERROR = "#f44336"
     SELECTION = "#555555"
+
+    @classmethod
+    def set(cls, name):
+        for key, value in THEMES.get(name, THEMES['dark']).items():
+            setattr(cls, key, value)
 
     @staticmethod
     def stylesheet():
@@ -125,6 +167,7 @@ class Theme:
                 background-color: {Theme.BG_ALT}; color: {Theme.FG};
                 padding: 8px; border: 1px solid {Theme.BORDER}; font-weight: bold;
             }}
+            QTableCornerButton::section {{ background-color: {Theme.BG_ALT}; border: 1px solid {Theme.BORDER}; }}
             QProgressBar {{
                 border: 1px solid {Theme.BORDER}; border-radius: 3px;
                 background-color: {Theme.BG_ALT}; text-align: center; color: {Theme.FG}; height: 20px;
@@ -150,6 +193,168 @@ class Theme:
         """
 
 
+# ============================================================
+# Локализация
+# ============================================================
+LANGS = {
+    'ru': {
+        'window_title': 'Proxy Switcher Pro v{v}',
+        'app_title': 'Proxy Switcher Pro - v{v}',
+        'grab': 'Собрать прокси',
+        'verify': 'Проверить все',
+        'del_dead': 'Удалить мертвые',
+        'del_slow': 'Удалить медленные',
+        'import': 'Импорт',
+        'rotate': 'Авторотация',
+        'clear': 'Очистить все',
+        'col_num': '№', 'col_ip': 'IP', 'col_port': 'ПОРТ', 'col_type': 'ТИП',
+        'col_status': 'СТАТУС', 'col_speed': 'СКОРОСТЬ', 'col_anon': 'АНОНИМНОСТЬ', 'col_country': 'СТРАНА',
+        'stats_fmt': 'Всего: {t} | Живых: {a} | Медленных: {s} | Мертвых: {d}',
+        'offline': 'БЕЗ ПРОКСИ',
+        'enabled_fmt': 'ВКЛЮЧЕН: {p}{speed}',
+        'verified_fmt': 'ПРОВЕРЕНО: {a} живых | {d} мертвых',
+        'disabled_btn': 'ПРОКСИ ВЫКЛЮЧЕН',
+        'settings_title': 'Настройки',
+        'settings_theme': 'Тема',
+        'settings_lang': 'Язык',
+        'settings_tooltip': 'Настройки (тема, язык)',
+        'theme_dark': 'Тёмная',
+        'theme_light': 'Светлая',
+        'theme_blue': 'Синяя',
+        'lang_ru': 'Русский',
+        'lang_en': 'English',
+        'save': 'СОХРАНИТЬ',
+        'cancel': 'ОТМЕНА',
+        'btn_collect': 'СОБРАТЬ',
+        'btn_delete': 'Удалить',
+        'q_title': 'Подтверждение',
+        'done_title': 'Готово',
+        'err_title': 'Ошибка',
+        'info_title': 'Инфо',
+        'success_title': 'Успех',
+        'grab_title': 'Настройки сбора прокси',
+        'grab_how_many': 'Сколько прокси собрать?',
+        'grab_desc': 'Введите количество (10-500):\nБольше = дольше',
+        'grab_add': 'Добавить к существующим ({n})',
+        'grab_confirm_add': 'Будет добавлено {n} прокси?\n\nЭто может занять 2-5 минут...',
+        'grab_confirm_new': 'Будет собрано {n} прокси?\n\nЭто может занять 2-5 минут...',
+        'grab_done_text': 'Всего прокси: {n}\n\nСохранено: {f}\n\nТеперь нажми "Проверить все"!',
+        'grab_fail_text': 'Не удалось собрать прокси\n\nПопробуй позже',
+        'verify_empty': 'Нет прокси для проверки',
+        'del_dead_none': 'Нет мертвых прокси',
+        'del_dead_confirm': 'Удалить {n} мертвых прокси?',
+        'del_slow_title': 'Удалить медленные прокси',
+        'del_slow_label': 'Удалить прокси медленнее (сек):',
+        'del_slow_none': 'Нет прокси медленнее {t}s',
+        'del_slow_confirm': 'Удалить {n} медленных прокси?',
+        'import_title': 'Импорт прокси',
+        'import_label': 'Введите прокси (IP:PORT):',
+        'import_done': 'Импортировано {n} прокси',
+        'clear_confirm': 'Очистить ВСЕ прокси?',
+        'win_only': 'Системная настройка прокси доступна только на Windows',
+        'choose_proxy': 'Выберите прокси из таблицы',
+        'only_working': 'Можно активировать только рабочие прокси (ALIVE или SLOW)\nТекущий: {s}',
+        'proxy_on_text': 'Прокси включен\n{p}',
+        'proxy_off_text': 'Прокси выключен\nПрямое соединение',
+        'proxy_on_fail': 'Не удалось включить прокси: {e}',
+        'proxy_off_fail': 'Не удалось выключить прокси: {e}',
+        'rotate_title': 'Авторотация',
+        'rotate_heading': 'Автоматическая ротация прокси',
+        'rotate_enable': 'Включить авторотацию',
+        'rotate_interval': 'Интервал (секунд):',
+        'rotate_tip': 'Совет: используйте авторотацию для смены прокси каждые N секунд',
+        'rotate_on_msg': 'Прокси будет меняться каждые {n} сек',
+        'rotate_off_msg': 'Авторотация выключена',
+        'ctx_fav_add': '☆ Добавить в избранное',
+        'ctx_fav_rem': '★ Убрать из избранного',
+        'ctx_copy': '📋 Копировать IP:Port',
+        'copied': 'Скопировано:\n{p}',
+    },
+    'en': {
+        'window_title': 'Proxy Switcher Pro v{v}',
+        'app_title': 'Proxy Switcher Pro - v{v}',
+        'grab': 'Grab Proxies',
+        'verify': 'Verify All',
+        'del_dead': 'Delete Dead',
+        'del_slow': 'Delete Slow',
+        'import': 'Import',
+        'rotate': 'Auto Rotate',
+        'clear': 'Clear All',
+        'col_num': '#', 'col_ip': 'IP', 'col_port': 'PORT', 'col_type': 'TYPE',
+        'col_status': 'STATUS', 'col_speed': 'SPEED', 'col_anon': 'ANONYMITY', 'col_country': 'COUNTRY',
+        'stats_fmt': 'Total: {t} | Alive: {a} | Slow: {s} | Dead: {d}',
+        'offline': 'OFFLINE',
+        'enabled_fmt': 'ENABLED: {p}{speed}',
+        'verified_fmt': 'VERIFIED: {a} alive | {d} dead',
+        'disabled_btn': 'PROXY DISABLED',
+        'settings_title': 'Settings',
+        'settings_theme': 'Theme',
+        'settings_lang': 'Language',
+        'settings_tooltip': 'Settings (theme, language)',
+        'theme_dark': 'Dark',
+        'theme_light': 'Light',
+        'theme_blue': 'Blue',
+        'lang_ru': 'Русский',
+        'lang_en': 'English',
+        'save': 'SAVE',
+        'cancel': 'CANCEL',
+        'btn_collect': 'COLLECT',
+        'btn_delete': 'Delete',
+        'q_title': 'Confirmation',
+        'done_title': 'Done',
+        'err_title': 'Error',
+        'info_title': 'Info',
+        'success_title': 'Success',
+        'grab_title': 'Proxy grab settings',
+        'grab_how_many': 'How many proxies to grab?',
+        'grab_desc': 'Enter the amount (10-500):\nMore = slower',
+        'grab_add': 'Add to existing ({n})',
+        'grab_confirm_add': 'Add {n} proxies?\n\nThis may take 2-5 minutes...',
+        'grab_confirm_new': 'Grab {n} proxies?\n\nThis may take 2-5 minutes...',
+        'grab_done_text': 'Total proxies: {n}\n\nSaved to: {f}\n\nNow press "Verify All"!',
+        'grab_fail_text': 'Failed to grab proxies\n\nTry again later',
+        'verify_empty': 'No proxies to check',
+        'del_dead_none': 'No dead proxies',
+        'del_dead_confirm': 'Delete {n} dead proxies?',
+        'del_slow_title': 'Delete slow proxies',
+        'del_slow_label': 'Delete proxies slower than (sec):',
+        'del_slow_none': 'No proxies slower than {t}s',
+        'del_slow_confirm': 'Delete {n} slow proxies?',
+        'import_title': 'Import proxies',
+        'import_label': 'Enter proxies (IP:PORT):',
+        'import_done': 'Imported {n} proxies',
+        'clear_confirm': 'Clear ALL proxies?',
+        'win_only': 'System proxy configuration is only available on Windows',
+        'choose_proxy': 'Select a proxy from the table',
+        'only_working': 'Only working proxies can be activated (ALIVE or SLOW)\nCurrent: {s}',
+        'proxy_on_text': 'Proxy enabled\n{p}',
+        'proxy_off_text': 'Proxy disabled\nDirect connection',
+        'proxy_on_fail': 'Failed to enable proxy: {e}',
+        'proxy_off_fail': 'Failed to disable proxy: {e}',
+        'rotate_title': 'Auto rotation',
+        'rotate_heading': 'Automatic proxy rotation',
+        'rotate_enable': 'Enable auto rotation',
+        'rotate_interval': 'Interval (seconds):',
+        'rotate_tip': 'Tip: use auto rotation to switch proxy every N seconds',
+        'rotate_on_msg': 'Proxy will rotate every {n} sec',
+        'rotate_off_msg': 'Auto rotation disabled',
+        'ctx_fav_add': '☆ Add to favorites',
+        'ctx_fav_rem': '★ Remove from favorites',
+        'ctx_copy': '📋 Copy IP:Port',
+        'copied': 'Copied:\n{p}',
+    },
+}
+
+_current_lang = 'ru'
+
+
+def tr(key, **kwargs):
+    s = LANGS.get(_current_lang, {}).get(key) or LANGS['en'].get(key) or key
+    if kwargs:
+        s = s.format(**kwargs)
+    return s
+
+
 class SplashScreen(QWidget):
     finished = pyqtSignal()
 
@@ -170,7 +375,7 @@ class SplashScreen(QWidget):
         title.setStyleSheet(f"color: {Theme.FG};")
         layout.addWidget(title)
 
-        version = QLabel("v2.0.0")
+        version = QLabel("v2.1.0")
         version.setFont(QFont("Segoe UI", 14))
         version.setAlignment(Qt.AlignCenter)
         version.setStyleSheet(f"color: {Theme.FG_DIM};")
@@ -225,29 +430,37 @@ class ProxyGrabber(QThread):
         super().__init__()
         self.max_proxies = max_proxies
         self._is_running = True
+        self._lock = threading.Lock()
         self.found_proxies = []
         self.seen = set()
         logger.info(f"[GRABBER] Инициализирован (max={max_proxies})")
+
+    # ip:port | scheme://ip:port | user:pass@ip:port | scheme://user:pass@ip:port
+    PROXY_LINE_RE = re.compile(
+        r'^(?:(?P<scheme>https?|socks4a?|socks5h?)://)?'
+        r'(?:(?P<user>[^:@/\s]+):(?P<pass>[^@\s]+)@)?'
+        r'(?P<ip>\d{1,3}(?:\.\d{1,3}){3}):(?P<port>\d{1,5})'
+    )
 
     def stop(self):
         self._is_running = False
         logger.info("[GRABBER] Остановлен")
 
     def fetch_url(self, url, timeout=10):
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            r = requests.get(url, headers=headers, timeout=timeout)
-            r.raise_for_status()
-            return r.text
-        except requests.exceptions.Timeout:
-            logger.warning(f"[TIMEOUT] {url}")
-            return None
-        except requests.exceptions.ConnectionError:
-            logger.warning(f"[CONN_ERR] {url}")
-            return None
-        except Exception as e:
-            logger.error(f"[FETCH_ERR] {url}: {e}")
-            return None
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        for attempt in (1, 2):
+            try:
+                r = requests.get(url, headers=headers, timeout=timeout)
+                r.raise_for_status()
+                return r.text
+            except requests.exceptions.Timeout:
+                logger.warning(f"[TIMEOUT] {url}")
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"[CONN_ERR] {url}")
+            except Exception as e:
+                logger.error(f"[FETCH_ERR] {url}: {e}")
+                return None
+        return None
 
     def parse_table_proxies(self, html):
         try:
@@ -280,69 +493,129 @@ class ProxyGrabber(QThread):
         except:
             return False
 
-    def parse_text_proxies(self, text):
-        try:
-            if not text:
-                return []
-            pattern = r'(\d+\.\d+\.\d+\.\d+):(\d+)'
-            matches = re.findall(pattern, text)
-            proxies = []
-            for ip, port in matches:
-                try:
-                    if self.is_valid_ip(ip) and 1 <= int(port) <= 65535:
-                        proxies.append((ip, port))
-                except:
-                    continue
-            return proxies
-        except Exception as e:
-            logger.error(f"[PARSE_ERR] {e}")
-            return []
+    def parse_lines(self, text, default_type):
+        """Построчный парсер: понимает префиксы протокола и user:pass@"""
+        proxies = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            m = self.PROXY_LINE_RE.match(line)
+            if not m:
+                continue
+            ptype = default_type
+            scheme = m.group('scheme')
+            if scheme:
+                if scheme.startswith('socks5'):
+                    ptype = 'SOCKS5'
+                elif scheme.startswith('socks4'):
+                    ptype = 'SOCKS4'
+                elif scheme == 'https':
+                    ptype = 'HTTPS'
+                else:
+                    ptype = 'HTTP'
+            ip, port = m.group('ip'), m.group('port')
+            if not self.is_valid_ip(ip) or not (1 <= int(port) <= 65535):
+                continue
+            proxies.append((ip, port, ptype, m.group('user') or '', m.group('pass') or ''))
+        return proxies
 
-    def add_proxy(self, ip, port, proxy_type='HTTP'):
-        if len(self.found_proxies) >= self.max_proxies:
-            self.stop()
-            return
-        key = f"{ip}:{port}"
-        if key not in self.seen:
+    def parse_json_proxies(self, text):
+        """JSON-источники вида {"data": [{"ip": ..., "port": ..., "protocols": [...]}]}"""
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return []
+        items = data.get('data') if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return []
+        proxies = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            ip = str(item.get('ip', '')).strip()
+            port = str(item.get('port', '')).strip()
+            if not self.is_valid_ip(ip) or not port.isdigit():
+                continue
+            protocols = item.get('protocols') or item.get('protocol') or []
+            if isinstance(protocols, str):
+                protocols = [protocols]
+            ptype = 'HTTP'
+            for p in protocols:
+                ps = str(p).lower()
+                if 'socks5' in ps:
+                    ptype = 'SOCKS5'
+                    break
+                if 'socks4' in ps:
+                    ptype = 'SOCKS4'
+                    break
+            proxies.append((ip, port, ptype, str(item.get('username') or ''), str(item.get('password') or '')))
+        return proxies
+
+    def add_proxy(self, ip, port, ptype='HTTP', login='', password=''):
+        with self._lock:
+            if len(self.found_proxies) >= self.max_proxies:
+                self.stop()
+                return False
+            key = f"{ip}:{port}"
+            if key in self.seen:
+                return False
             self.seen.add(key)
             self.found_proxies.append({
-                'ip': ip, 'port': port, 'type': proxy_type.upper(),
-                'name': f"Proxy_{ip}", 'login': '', 'password': '',
+                'ip': ip, 'port': port, 'type': ptype.upper(),
+                'name': f"Proxy_{ip}", 'login': login, 'password': password,
                 'status': 'fresh', 'speed': '', 'anonymity': 'unknown', 'country': '🌍',
             })
-            self.proxy_found.emit(ip, port, proxy_type)
+        self.proxy_found.emit(ip, port, ptype)
+        return True
 
     def run(self):
-        logger.info(f"[GRABBER] Сбор из {len(PROXY_SOURCES)} источников")
         total = len(PROXY_SOURCES)
+        logger.info(f"[GRABBER] Сбор из {total} источников (параллельно, {min(total, 6)} потоков)")
+        completed = [0]
 
-        for i, url in enumerate(PROXY_SOURCES):
-            if not self._is_running or len(self.found_proxies) >= self.max_proxies:
-                break
-            self.progress.emit(int((i / total) * 100), f"Сбор... {len(self.found_proxies)}/{self.max_proxies}")
-
-            if 'socks5' in url.lower():
-                ptype = 'SOCKS5'
-            elif 'socks4' in url.lower():
-                ptype = 'SOCKS4'
-            else:
-                ptype = 'HTTP'
-
+        def fetch_source(url, default_type):
+            if not self._is_running:
+                return None
             try:
                 content = self.fetch_url(url)
                 if not content:
-                    continue
+                    return None
+                stripped = content.lstrip()
+                if stripped.startswith('{') or stripped.startswith('['):
+                    return self.parse_json_proxies(content)
                 if '<table' in content.lower():
-                    proxies = self.parse_table_proxies(content)
-                else:
-                    proxies = self.parse_text_proxies(content)
-                for ip, port in proxies:
-                    if len(self.found_proxies) >= self.max_proxies:
-                        break
-                    self.add_proxy(ip, port, ptype)
+                    return [(ip, port, default_type, '', '') for ip, port in self.parse_table_proxies(content)]
+                return self.parse_lines(content, default_type)
             except Exception as e:
                 logger.error(f"[SOURCE_ERR] {url}: {e}")
-                continue
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total, 6)) as executor:
+            futures = [executor.submit(fetch_source, url, ptype) for url, ptype in PROXY_SOURCES]
+            results = []
+            for future in concurrent.futures.as_completed(futures):
+                if not self._is_running:
+                    break
+                with self._lock:
+                    completed[0] += 1
+                    done = completed[0]
+                self.progress.emit(int((done / total) * 100), f"Источники {done}/{total}")
+                results.append(future.result())
+
+        # round-robin по источникам, чтобы типы и источники подмешивались равномерно,
+        # а не только те, что скачались первыми
+        pool = [iter(lst) for lst in results if lst]
+        while self._is_running and pool:
+            alive_iterators = []
+            for it in pool:
+                try:
+                    ip, port, ptype, login, password = next(it)
+                    self.add_proxy(ip, port, ptype, login, password)
+                    alive_iterators.append(it)
+                except StopIteration:
+                    pass
+            pool = alive_iterators
 
         logger.info(f"[GRABBER] Собрано {len(self.found_proxies)} прокси")
         self.progress.emit(100, f"Готово: {len(self.found_proxies)} прокси")
@@ -420,22 +693,46 @@ class ProxyChecker(QThread):
                 results['error'] = str(e)[:30]
 
         elif ptype in ['SOCKS4', 'SOCKS5']:
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2)
-                start = time.time()
-                result = sock.connect_ex((ip, int(port)))
-                sock.close()
-                rt = time.time() - start
-                if result == 0:
-                    results['status'] = 'alive'
-                    results['speed'] = round(rt, 2)
-                    results['anonymity'] = 'elite'
-                else:
+            if SOCKS_SUPPORTED:
+                # реальная проверка через requests: убеждаемся, что это действительно SOCKS
+                scheme = 'socks5' if ptype == 'SOCKS5' else 'socks4'
+                try:
+                    proxy_str = f"{scheme}://{ip}:{port}"
+                    pd = {'http': proxy_str, 'https': proxy_str}
+                    start = time.time()
+                    r = requests.get('http://httpbin.org/ip', proxies=pd, timeout=3, headers={'User-Agent': 'Mozilla/5.0'})
+                    rt = time.time() - start
+                    if r.status_code == 200:
+                        results['status'] = 'alive'
+                        results['speed'] = round(rt, 2)
+                        results['anonymity'] = 'elite'
+                    else:
+                        results['status'] = 'slow'
+                        results['speed'] = round(rt, 2)
+                        results['error'] = f'HTTP {r.status_code}'
+                except requests.exceptions.Timeout:
                     results['status'] = 'slow'
-                    results['speed'] = 2.0
-            except:
-                results['status'] = 'dead'
+                    results['speed'] = 3.0
+                    results['error'] = 'Timeout'
+                except Exception:
+                    results['status'] = 'dead'
+            else:
+                # fallback без PySocks: только проверка открытого порта
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(2)
+                    start = time.time()
+                    result = sock.connect_ex((ip, int(port)))
+                    sock.close()
+                    rt = time.time() - start
+                    if result == 0:
+                        results['status'] = 'slow'
+                        results['speed'] = round(rt, 2)
+                        results['error'] = 'port only (нет PySocks)'
+                    else:
+                        results['status'] = 'dead'
+                except:
+                    results['status'] = 'dead'
 
         results['country'] = self._get_country_by_ip(ip)
         return results
@@ -499,6 +796,8 @@ class ProxyChecker(QThread):
         dead = sum(1 for p in self.proxies if p.get('status') == 'dead')
         logger.info(f"[CHECKER] Готово: {alive} живых | {slow} медленных | {dead} мертвых")
 
+        self.finished.emit(self.proxies)
+
 
 # ============================================================
 # Главное окно
@@ -517,6 +816,9 @@ class ProxySwitcherPro(QMainWindow):
 
         try:
             self.load_settings()
+            global _current_lang
+            _current_lang = self.settings.get('lang', 'ru')
+            Theme.set(self.settings.get('theme', 'dark'))
             self.init_ui()
             self.apply_theme()
             self.load_proxies()
@@ -535,10 +837,10 @@ class ProxySwitcherPro(QMainWindow):
         QTimer.singleShot(1000, self.update_my_ip)
 
     def default_settings(self):
-        return {'theme': 'dark', 'timeout': 10, 'threads': 30, 'auto_rotate': False, 'last_proxy': None}
+        return {'theme': 'dark', 'lang': 'ru', 'timeout': 10, 'threads': 30, 'auto_rotate': False, 'last_proxy': None}
 
     def init_ui(self):
-        self.setWindowTitle(f"Proxy Switcher Pro v{VERSION}")
+        self.setWindowTitle(tr('window_title', v=VERSION))
         self.setGeometry(100, 100, 1200, 700)
 
         central = QWidget()
@@ -549,16 +851,18 @@ class ProxySwitcherPro(QMainWindow):
 
         # верхняя панель
         top = QHBoxLayout()
-        title = QLabel(f"Proxy Switcher Pro - v{VERSION}")
-        title.setObjectName("title")
-        top.addWidget(title)
+        self.title_label = QLabel(tr('app_title', v=VERSION))
+        self.title_label.setObjectName("title")
+        top.addWidget(self.title_label)
         top.addStretch()
 
         self.ip_label = QLabel("IP: ...")
         self.ip_label.setObjectName("subtitle")
         top.addWidget(self.ip_label)
 
-        self.status_btn = QPushButton("OFFLINE")
+        self._status_mode = 'offline'
+        self._verified_counts = (0, 0)
+        self.status_btn = QPushButton(tr('offline'))
         self.status_btn.setMaximumWidth(160)
         self.status_btn.clicked.connect(self.toggle_proxy)
         top.addWidget(self.status_btn)
@@ -566,27 +870,35 @@ class ProxySwitcherPro(QMainWindow):
 
         # кнопки
         btns = QHBoxLayout()
-        buttons = [
-            ("Grab Proxies", self.grab_proxies),
-            ("Verify All", self.check_all_proxies),
-            ("Delete Dead", self.delete_dead_proxies),
-            ("Delete Slow", self.delete_slow_proxies),
-            ("Import", self.import_proxies),
-            ("Auto Rotate", self.setup_auto_rotate),
-            ("Clear All", self.clear_all),
+        button_defs = [
+            ('grab', self.grab_proxies),
+            ('verify', self.check_all_proxies),
+            ('del_dead', self.delete_dead_proxies),
+            ('del_slow', self.delete_slow_proxies),
+            ('import', self.import_proxies),
+            ('rotate', self.setup_auto_rotate),
+            ('clear', self.clear_all),
         ]
-        for text, cb in buttons:
-            btn = QPushButton(text)
+        self._action_buttons = []
+        for key, cb in button_defs:
+            btn = QPushButton(tr(key))
             btn.setMinimumWidth(100)
             btn.clicked.connect(cb)
             btns.addWidget(btn)
+            self._action_buttons.append((btn, key))
         layout.addLayout(btns)
 
         # таблица
         self.table = QTableWidget()
         self.table.setColumnCount(8)
-        self.table.setHorizontalHeaderLabels(["#", "IP", "PORT", "TYPE", "STATUS", "SPEED", "ANONYMITY", "COUNTRY"])
+        self.table.setHorizontalHeaderLabels([
+            tr('col_num'), tr('col_ip'), tr('col_port'), tr('col_type'),
+            tr('col_status'), tr('col_speed'), tr('col_anon'), tr('col_country'),
+        ])
         self.table.horizontalHeader().setStretchLastSection(True)
+        # встроенный вертикальный заголовок дублирует нашу колонку "№",
+        # а его уголок не красится темой - скрываем
+        self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setAlternatingRowColors(True)
@@ -603,13 +915,127 @@ class ProxySwitcherPro(QMainWindow):
         self.progress_bar.setMaximumHeight(25)
         layout.addWidget(self.progress_bar)
 
-        # статистика
-        self.stats_label = QLabel("Total: 0 | Alive: 0 | Slow: 0 | Dead: 0")
+        # нижняя панель: шестерёнка настроек слева + статистика
+        bottom = QHBoxLayout()
+        self.settings_btn = QPushButton("⚙")
+        self.settings_btn.setFixedSize(44, 32)
+        self.settings_btn.setToolTip(tr('settings_tooltip'))
+        self.settings_btn.clicked.connect(self.open_settings)
+        bottom.addWidget(self.settings_btn)
+        bottom.addSpacing(8)
+
+        self.stats_label = QLabel(tr('stats_fmt', t=0, a=0, s=0, d=0))
         self.stats_label.setObjectName("stats")
-        layout.addWidget(self.stats_label)
+        bottom.addWidget(self.stats_label, 1)
+        layout.addLayout(bottom)
 
     def apply_theme(self):
         self.setStyleSheet(Theme.stylesheet())
+
+    def open_settings(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr('settings_title'))
+        dialog.setStyleSheet(Theme.stylesheet())
+        dialog.setFixedWidth(380)
+        layout = QVBoxLayout(dialog)
+
+        theme_label = QLabel(tr('settings_theme'))
+        theme_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        layout.addWidget(theme_label)
+
+        theme_combo = QComboBox()
+        theme_keys = list(THEMES.keys())
+        theme_combo.addItems([tr(f'theme_{k}') for k in theme_keys])
+        cur_theme = self.settings.get('theme', 'dark')
+        if cur_theme in theme_keys:
+            theme_combo.setCurrentIndex(theme_keys.index(cur_theme))
+        layout.addWidget(theme_combo)
+
+        layout.addSpacing(10)
+
+        lang_label = QLabel(tr('settings_lang'))
+        lang_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        layout.addWidget(lang_label)
+
+        lang_combo = QComboBox()
+        lang_keys = list(LANGS.keys())
+        # названия языков всегда показываются на самом языке
+        lang_combo.addItems(['Русский' if k == 'ru' else 'English' for k in lang_keys])
+        cur_lang = self.settings.get('lang', 'ru')
+        if cur_lang in lang_keys:
+            lang_combo.setCurrentIndex(lang_keys.index(cur_lang))
+        layout.addWidget(lang_combo)
+
+        layout.addSpacing(15)
+
+        btns = QHBoxLayout()
+        ok_btn = QPushButton(tr('save'))
+        ok_btn.setObjectName("primary")
+        cancel_btn = QPushButton(tr('cancel'))
+        btns.addWidget(ok_btn)
+        btns.addWidget(cancel_btn)
+        layout.addLayout(btns)
+
+        def save_settings():
+            new_theme = theme_keys[theme_combo.currentIndex()]
+            new_lang = lang_keys[lang_combo.currentIndex()]
+
+            self.settings['theme'] = new_theme
+            self.settings['lang'] = new_lang
+
+            global _current_lang
+            _current_lang = new_lang
+            Theme.set(new_theme)
+
+            self.apply_theme()
+            self.retranslate_ui()
+            self.refresh_table()
+            self.update_status_btn()
+            self.save_settings()
+            dialog.accept()
+
+        ok_btn.clicked.connect(save_settings)
+        cancel_btn.clicked.connect(dialog.reject)
+        dialog.exec_()
+
+    def retranslate_ui(self):
+        """Обновить все тексты интерфейса после смены языка"""
+        self.setWindowTitle(tr('window_title', v=VERSION))
+        self.title_label.setText(tr('app_title', v=VERSION))
+        for btn, key in self._action_buttons:
+            btn.setText(tr(key))
+        self.table.setHorizontalHeaderLabels([
+            tr('col_num'), tr('col_ip'), tr('col_port'), tr('col_type'),
+            tr('col_status'), tr('col_speed'), tr('col_anon'), tr('col_country'),
+        ])
+        self.settings_btn.setToolTip(tr('settings_tooltip'))
+        self._update_stats()
+
+    def update_status_btn(self):
+        """Перерисовать кнопку статуса (текст + цвет) по текущему состоянию"""
+        if (self._status_mode == 'enabled' and self.proxy_enabled
+                and self.active_proxy is not None and self.active_proxy < len(self.proxies)):
+            proxy = self.proxies[self.active_proxy]
+            emoji = "🟢" if proxy.get('status') == 'alive' else "🟡"
+            speed_info = f" ({proxy.get('speed', '?')}s)" if proxy.get('speed') else ""
+            self.status_btn.setText(f"{emoji} " + tr('enabled_fmt', p=f"{proxy['ip']}:{proxy['port']}", speed=speed_info))
+            self.status_btn.setStyleSheet(f"""
+                QPushButton {{ background-color: {Theme.SUCCESS}; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }}
+                QPushButton:hover {{ background-color: #388e3c; }}
+            """)
+        elif self._status_mode == 'disabled':
+            self.status_btn.setText(tr('disabled_btn'))
+            self.status_btn.setStyleSheet(f"""
+                QPushButton {{ background-color: {Theme.ERROR}; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }}
+                QPushButton:hover {{ background-color: #d32f2f; }}
+            """)
+        elif self._status_mode == 'verified':
+            a, d = self._verified_counts
+            self.status_btn.setText(tr('verified_fmt', a=a, d=d))
+            self.status_btn.setStyleSheet('')
+        else:
+            self.status_btn.setText(tr('offline'))
+            self.status_btn.setStyleSheet('')
 
     def load_proxies(self):
         try:
@@ -719,19 +1145,19 @@ class ProxySwitcherPro(QMainWindow):
         alive = sum(1 for p in self.proxies if p.get('status') == 'alive')
         slow = sum(1 for p in self.proxies if p.get('status') == 'slow')
         dead = sum(1 for p in self.proxies if p.get('status') == 'dead')
-        self.stats_label.setText(f"Total: {total} | Alive: {alive} | Slow: {slow} | Dead: {dead}")
+        self.stats_label.setText(tr('stats_fmt', t=total, a=alive, s=slow, d=dead))
 
     def grab_proxies(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Настройки сбора прокси")
+        dialog.setWindowTitle(tr('grab_title'))
         dialog.setStyleSheet(Theme.stylesheet())
         layout = QVBoxLayout(dialog)
 
-        title = QLabel("Сколько прокси собрать?")
+        title = QLabel(tr('grab_how_many'))
         title.setFont(QFont("Segoe UI", 12, QFont.Bold))
         layout.addWidget(title)
 
-        desc = QLabel("Введите количество (10-500):\nБольше = дольше")
+        desc = QLabel(tr('grab_desc'))
         desc.setFont(QFont("Segoe UI", 10))
         desc.setStyleSheet(f"color: {Theme.FG_DIM};")
         layout.addWidget(desc)
@@ -743,14 +1169,14 @@ class ProxySwitcherPro(QMainWindow):
         spinbox.setMinimumHeight(40)
         layout.addWidget(spinbox)
 
-        add_checkbox = QCheckBox(f"Добавить к существующим ({len(self.proxies)})")
+        add_checkbox = QCheckBox(tr('grab_add', n=len(self.proxies)))
         add_checkbox.setChecked(len(self.proxies) > 0)
         layout.addWidget(add_checkbox)
 
         btns = QHBoxLayout()
-        ok_btn = QPushButton("СОБРАТЬ")
+        ok_btn = QPushButton(tr('btn_collect'))
         ok_btn.setObjectName("primary")
-        cancel_btn = QPushButton("ОТМЕНА")
+        cancel_btn = QPushButton(tr('cancel'))
         ok_btn.clicked.connect(dialog.accept)
         cancel_btn.clicked.connect(dialog.reject)
         btns.addWidget(ok_btn)
@@ -763,8 +1189,9 @@ class ProxySwitcherPro(QMainWindow):
         count = spinbox.value()
         add_to_existing = add_checkbox.isChecked()
 
-        reply = QMessageBox.question(self, "Подтверждение",
-            f"Будет {'добавлено' if add_to_existing else 'собрано'} {count} прокси?\n\nЭто может занять 2-5 минут...",
+        confirm_key = 'grab_confirm_add' if add_to_existing else 'grab_confirm_new'
+        reply = QMessageBox.question(self, tr('q_title'),
+            tr(confirm_key, n=count),
             QMessageBox.Yes | QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
@@ -799,14 +1226,14 @@ class ProxySwitcherPro(QMainWindow):
 
         total = len(self.proxies)
         if total > 0:
-            QMessageBox.information(self, "Готово",
-                f"Всего прокси: {total}\n\nСохранено: {CONFIG_FILE}\n\nТеперь нажми 'Verify All'!")
+            QMessageBox.information(self, tr('done_title'),
+                tr('grab_done_text', n=total, f=str(CONFIG_FILE)))
         else:
-            QMessageBox.warning(self, "Ошибка", "Не удалось собрать прокси\n\nПопробуй позже")
+            QMessageBox.warning(self, tr('err_title'), tr('grab_fail_text'))
 
     def check_all_proxies(self):
         if not self.proxies:
-            QMessageBox.warning(self, "Ошибка", "Нет прокси для проверки")
+            QMessageBox.warning(self, tr('err_title'), tr('verify_empty'))
             return
 
         self.progress_bar.setVisible(True)
@@ -878,15 +1305,18 @@ class ProxySwitcherPro(QMainWindow):
 
         alive = sum(1 for p in self.proxies if p.get('status') == 'alive')
         dead = sum(1 for p in self.proxies if p.get('status') == 'dead')
-        self.status_btn.setText(f"VERIFIED: {alive} alive | {dead} dead")
+        self._verified_counts = (alive, dead)
+        if not self.proxy_enabled:
+            self._status_mode = 'verified'
+            self.update_status_btn()
 
     def delete_dead_proxies(self):
         dead = [p for p in self.proxies if p.get('status') == 'dead']
         if not dead:
-            QMessageBox.information(self, "Инфо", "Нет мертвых прокси")
+            QMessageBox.information(self, tr('info_title'), tr('del_dead_none'))
             return
 
-        reply = QMessageBox.question(self, "Подтверждение", f"Удалить {len(dead)} мертвых прокси?", QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(self, tr('q_title'), tr('del_dead_confirm', n=len(dead)), QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.proxies = [p for p in self.proxies if p.get('status') != 'dead']
             self.refresh_table()
@@ -894,20 +1324,20 @@ class ProxySwitcherPro(QMainWindow):
 
     def delete_slow_proxies(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Удалить медленные прокси")
+        dialog.setWindowTitle(tr('del_slow_title'))
         dialog.setStyleSheet(Theme.stylesheet())
         layout = QVBoxLayout(dialog)
 
-        layout.addWidget(QLabel("Удалить прокси медленнее (сек):"))
+        layout.addWidget(QLabel(tr('del_slow_label')))
         speed_spin = QDoubleSpinBox()
         speed_spin.setRange(0.1, 60.0)
         speed_spin.setValue(2.0)
         layout.addWidget(speed_spin)
 
         btns = QHBoxLayout()
-        ok_btn = QPushButton("Удалить")
+        ok_btn = QPushButton(tr('btn_delete'))
         ok_btn.setObjectName("danger")
-        cancel_btn = QPushButton("Отмена")
+        cancel_btn = QPushButton(tr('cancel'))
         ok_btn.clicked.connect(dialog.accept)
         cancel_btn.clicked.connect(dialog.reject)
         btns.addWidget(ok_btn)
@@ -921,17 +1351,17 @@ class ProxySwitcherPro(QMainWindow):
         slow = [p for p in self.proxies if p.get('speed', 0) and float(p.get('speed', 0)) > threshold]
 
         if not slow:
-            QMessageBox.information(self, "Инфо", f"Нет прокси медленнее {threshold}s")
+            QMessageBox.information(self, tr('info_title'), tr('del_slow_none', t=threshold))
             return
 
-        reply = QMessageBox.question(self, "Подтверждение", f"Удалить {len(slow)} медленных прокси?", QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(self, tr('q_title'), tr('del_slow_confirm', n=len(slow)), QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.proxies = [p for p in self.proxies if not (p.get('speed', 0) and float(p.get('speed', 0)) > threshold)]
             self.refresh_table()
             self.save_proxies()
 
     def import_proxies(self):
-        text, ok = QInputDialog.getMultiLineText(self, "Импорт прокси", "Введите прокси (IP:PORT):")
+        text, ok = QInputDialog.getMultiLineText(self, tr('import_title'), tr('import_label'))
         if not ok or not text.strip():
             return
 
@@ -945,10 +1375,10 @@ class ProxySwitcherPro(QMainWindow):
 
         self.refresh_table()
         self.save_proxies()
-        QMessageBox.information(self, "Успех", f"Импортировано {added} прокси")
+        QMessageBox.information(self, tr('success_title'), tr('import_done', n=added))
 
     def clear_all(self):
-        reply = QMessageBox.question(self, "Подтверждение", "Очистить ВСЕ прокси?", QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(self, tr('q_title'), tr('clear_confirm'), QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.proxies = []
             self.refresh_table()
@@ -974,19 +1404,19 @@ class ProxySwitcherPro(QMainWindow):
             self.enable_proxy()
 
 
-    def enable_proxy(self):
+    def enable_proxy(self, silent=False):
         if not IS_WINDOWS:
-            QMessageBox.warning(self, "Ошибка", "Системная настройка прокси доступна только на Windows")
+            QMessageBox.warning(self, tr('err_title'), tr('win_only'))
             return
 
         row = self.table.currentRow()
         if row < 0 or row >= len(self.proxies):
-            QMessageBox.warning(self, "Ошибка", "Выберите прокси из таблицы")
+            QMessageBox.warning(self, tr('err_title'), tr('choose_proxy'))
             return
 
         proxy = self.proxies[row]
         if proxy.get('status') not in ['alive', 'slow']:
-            QMessageBox.warning(self, "Ошибка", f"Можно активировать только рабочие прокси (ALIVE или SLOW)\nТекущий: {proxy.get('status').upper()}")
+            QMessageBox.warning(self, tr('err_title'), tr('only_working', s=str(proxy.get('status', 'unknown')).upper()))
             return
 
         try:
@@ -994,7 +1424,12 @@ class ProxySwitcherPro(QMainWindow):
             import ctypes
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, f"{proxy['ip']}:{proxy['port']}")
+            # SOCKS в реестре Windows задаётся как "socks=host:port", иначе система примет его за HTTP-прокси
+            if proxy.get('type', 'HTTP').upper().startswith('SOCKS'):
+                proxy_server = f"socks={proxy['ip']}:{proxy['port']}"
+            else:
+                proxy_server = f"{proxy['ip']}:{proxy['port']}"
+            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_server)
             winreg.CloseKey(key)
             ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)
 
@@ -1002,20 +1437,18 @@ class ProxySwitcherPro(QMainWindow):
             self.active_proxy = row
             self.settings['last_proxy'] = row
             self.save_settings()
-            emoji = "🟢" if proxy.get('status') == 'alive' else "🟡"
-            speed_info = f" ({proxy.get('speed', '?')}s)" if proxy.get('speed') else ""
-            self.status_btn.setText(f"{emoji} ENABLED: {proxy['ip']}:{proxy['port']}{speed_info}")
-            self.status_btn.setStyleSheet(f"""
-                QPushButton {{ background-color: {Theme.SUCCESS}; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }}
-                QPushButton:hover {{ background-color: #388e3c; }}
-            """)
-            QMessageBox.information(self, "Успех", f"Прокси включен\n{proxy['ip']}:{proxy['port']}")
+            self._status_mode = 'enabled'
+            self.update_status_btn()
+            if not silent:
+                QMessageBox.information(self, tr('success_title'), tr('proxy_on_text', p=f"{proxy['ip']}:{proxy['port']}"))
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось включить прокси: {e}")
+            logger.error(f"[PROXY_ON] {e}")
+            if not silent:
+                QMessageBox.critical(self, tr('err_title'), tr('proxy_on_fail', e=e))
 
-    def disable_proxy(self):
+    def disable_proxy(self, silent=False):
         if not IS_WINDOWS:
-            QMessageBox.warning(self, "Ошибка", "Системная настройка прокси доступна только на Windows")
+            QMessageBox.warning(self, tr('err_title'), tr('win_only'))
             return
 
         try:
@@ -1030,14 +1463,14 @@ class ProxySwitcherPro(QMainWindow):
             self.proxy_enabled = False
             self.active_proxy = None
             self.save_settings()
-            self.status_btn.setText("PROXY DISABLED")
-            self.status_btn.setStyleSheet(f"""
-                QPushButton {{ background-color: {Theme.ERROR}; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; }}
-                QPushButton:hover {{ background-color: #d32f2f; }}
-            """)
-            QMessageBox.information(self, "Успех", "Прокси выключен\nПрямое соединение")
+            self._status_mode = 'disabled'
+            self.update_status_btn()
+            if not silent:
+                QMessageBox.information(self, tr('success_title'), tr('proxy_off_text'))
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось выключить прокси: {e}")
+            logger.error(f"[PROXY_OFF] {e}")
+            if not silent:
+                QMessageBox.critical(self, tr('err_title'), tr('proxy_off_fail', e=e))
 
     def rotate_proxy(self):
         if not self.proxy_enabled:
@@ -1047,25 +1480,29 @@ class ProxySwitcherPro(QMainWindow):
         if not alive:
             return
 
-        next_idx = random.choice(alive)
+        # исключаем текущий активный прокси, чтобы ротация реально переключала
+        candidates = [i for i in alive if i != self.active_proxy] or alive
+
+        next_idx = random.choice(candidates)
+        self.disable_proxy(silent=True)
         self.table.setCurrentCell(next_idx, 0)
-        self.toggle_proxy()
+        self.enable_proxy(silent=True)
 
     def setup_auto_rotate(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("Авторотация")
+        dialog.setWindowTitle(tr('rotate_title'))
         dialog.setStyleSheet(Theme.stylesheet())
         layout = QVBoxLayout(dialog)
 
-        title = QLabel("Автоматическая ротация прокси")
+        title = QLabel(tr('rotate_heading'))
         title.setFont(QFont("Segoe UI", 12, QFont.Bold))
         layout.addWidget(title)
 
-        enable_checkbox = QCheckBox("Включить авторотацию")
+        enable_checkbox = QCheckBox(tr('rotate_enable'))
         enable_checkbox.setChecked(self.settings.get('auto_rotate', False))
         layout.addWidget(enable_checkbox)
 
-        layout.addWidget(QLabel("Интервал (секунд):"))
+        layout.addWidget(QLabel(tr('rotate_interval')))
         interval_spin = QSpinBox()
         interval_spin.setRange(5, 3600)
         interval_spin.setValue(self.rotate_timer_interval)
@@ -1074,12 +1511,12 @@ class ProxySwitcherPro(QMainWindow):
         layout.addWidget(interval_spin)
 
         layout.addSpacing(15)
-        layout.addWidget(QLabel("Совет: используйте авторотацию для смены прокси каждые N секунд"))
+        layout.addWidget(QLabel(tr('rotate_tip')))
 
         btns = QHBoxLayout()
-        ok_btn = QPushButton("СОХРАНИТЬ")
+        ok_btn = QPushButton(tr('save'))
         ok_btn.setObjectName("primary")
-        cancel_btn = QPushButton("ОТМЕНА")
+        cancel_btn = QPushButton(tr('cancel'))
         btns.addWidget(ok_btn)
         btns.addWidget(cancel_btn)
         layout.addLayout(btns)
@@ -1094,10 +1531,10 @@ class ProxySwitcherPro(QMainWindow):
 
             if enabled:
                 self.rotate_timer.start(interval * 1000)
-                QMessageBox.information(self, "Авторотация", f"Прокси будет меняться каждые {interval} сек")
+                QMessageBox.information(self, tr('rotate_title'), tr('rotate_on_msg', n=interval))
             else:
                 self.rotate_timer.stop()
-                QMessageBox.information(self, "Авторотация", "Авторотация выключена")
+                QMessageBox.information(self, tr('rotate_title'), tr('rotate_off_msg'))
 
             dialog.accept()
 
@@ -1139,14 +1576,14 @@ class ProxySwitcherPro(QMainWindow):
         is_favorite = proxy.get('favorite', False)
 
         if is_favorite:
-            action = menu.addAction("★ Убрать из избранного")
+            action = menu.addAction(tr('ctx_fav_rem'))
         else:
-            action = menu.addAction("☆ Добавить в избранное")
+            action = menu.addAction(tr('ctx_fav_add'))
         action.triggered.connect(lambda: self.toggle_favorite(index))
 
         menu.addSeparator()
 
-        copy_action = menu.addAction("📋 Копировать IP:Port")
+        copy_action = menu.addAction(tr('ctx_copy'))
         copy_action.triggered.connect(lambda: self.copy_proxy_to_clipboard(index))
 
         menu.exec_(self.table.mapToGlobal(pos))
@@ -1166,7 +1603,7 @@ class ProxySwitcherPro(QMainWindow):
         proxy = self.proxies[index]
         proxy_str = f"{proxy['ip']}:{proxy['port']}"
         QApplication.clipboard().setText(proxy_str)
-        QMessageBox.information(self, "Успех", f"Скопировано:\n{proxy_str}")
+        QMessageBox.information(self, tr('success_title'), tr('copied', p=proxy_str))
 
 
 # ============================================================
