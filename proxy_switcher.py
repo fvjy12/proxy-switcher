@@ -11,6 +11,7 @@ import random
 import platform
 import concurrent.futures
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,7 +29,7 @@ except ImportError:
     logger = logging.getLogger("ProxySwitcher")
 
 APP_NAME = "Proxy Switcher Pro"
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 if LOGURU:
     try:
@@ -54,6 +55,11 @@ CONFIG_FILE = CONFIG_DIR / "proxies.json"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# Стандартный список исключений WinINET: локальные адреса не ходят через прокси
+PROXY_OVERRIDE = ("localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;"
+                  "172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;"
+                  "172.29.*;172.30.*;172.31.*;192.168.*;<local>")
 
 try:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -411,6 +417,12 @@ def parse_proxy_lines(text, default_type='HTTP'):
     return proxies
 
 
+def direct_proxies():
+    """Пустой прокси-маппинг: без него requests подхватывает системный прокси из реестра
+    Windows, и служебные запросы (сбор, гео, свой IP) шли бы через активный прокси"""
+    return {'http': None, 'https': None}
+
+
 JUDGES = [
     ('http://httpbin.org/ip', 'origin'),
     ('https://api.ipify.org?format=json', 'ip'),
@@ -469,7 +481,7 @@ class ProxyGrabber(QThread):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         for attempt in (1, 2):
             try:
-                r = requests.get(url, headers=headers, timeout=timeout)
+                r = requests.get(url, headers=headers, timeout=timeout, proxies=direct_proxies())
                 r.raise_for_status()
                 return r.text
             except requests.exceptions.Timeout:
@@ -624,6 +636,9 @@ class ProxyChecker(QThread):
         ip = proxy.get('ip', '')
         port = proxy.get('port', '')
         ptype = proxy.get('type', 'HTTP').upper()
+        login = str(proxy.get('login') or '')
+        password = str(proxy.get('password') or '')
+        auth = f"{quote(login)}:{quote(password)}@" if login else ''
 
         if not ip or not port:
             return results
@@ -639,7 +654,7 @@ class ProxyChecker(QThread):
             return results
 
         if ptype in ['HTTP', 'HTTPS']:
-            status, speed, anonymity, error = check_via_http(f"http://{ip}:{port}", ip)
+            status, speed, anonymity, error = check_via_http(f"http://{auth}{ip}:{port}", ip)
             results['status'] = status
             results['speed'] = speed
             results['anonymity'] = anonymity
@@ -648,7 +663,7 @@ class ProxyChecker(QThread):
         elif ptype in ['SOCKS4', 'SOCKS5']:
             if SOCKS_SUPPORTED:
                 scheme = 'socks5' if ptype == 'SOCKS5' else 'socks4'
-                status, speed, anonymity, error = check_via_http(f"{scheme}://{ip}:{port}", ip)
+                status, speed, anonymity, error = check_via_http(f"{scheme}://{auth}{ip}:{port}", ip)
                 results['status'] = status
                 results['speed'] = speed
                 results['anonymity'] = anonymity
@@ -692,7 +707,8 @@ class ProxyChecker(QThread):
             try:
                 r = requests.post('http://ip-api.com/batch?fields=query,countryCode',
                                   json=[{'query': ip} for ip in chunk], timeout=15,
-                                  headers={'User-Agent': 'Mozilla/5.0'})
+                                  headers={'User-Agent': 'Mozilla/5.0'},
+                                  proxies=direct_proxies())
                 if r.status_code != 200:
                     logger.warning(f"[GEO_ERR] batch HTTP {r.status_code}")
                     return
@@ -715,7 +731,7 @@ class ProxyChecker(QThread):
         logger.info(f"[CHECKER] Запуск проверки {total} прокси")
 
         try:
-            r = requests.get('https://api.ipify.org?format=json', timeout=2)
+            r = requests.get('https://api.ipify.org?format=json', timeout=2, proxies=direct_proxies())
             real_ip = r.json().get('ip', 'Unknown')
             self.ip_checked_signal.emit(real_ip)
         except:
@@ -791,7 +807,13 @@ class ProxySwitcherPro(QMainWindow):
 
         self.rotate_timer = QTimer()
         self.rotate_timer.timeout.connect(self.rotate_proxy)
-        self.rotate_timer_interval = 60
+        try:
+            self.rotate_timer_interval = max(5, int(self.settings.get('rotate_interval', 60)))
+        except (TypeError, ValueError):
+            self.rotate_timer_interval = 60
+        if self.settings.get('auto_rotate'):
+            self.rotate_timer.start(self.rotate_timer_interval * 1000)
+            logger.info(f"[ROTATE] Авторотация восстановлена: каждые {self.rotate_timer_interval} сек")
 
         self._init_tray()
 
@@ -799,7 +821,8 @@ class ProxySwitcherPro(QMainWindow):
 
     def default_settings(self):
         return {'theme': 'dark', 'lang': 'ru', 'timeout': 10, 'threads': 30,
-                'auto_rotate': False, 'last_proxy': None, 'minimize_to_tray': True}
+                'auto_rotate': False, 'rotate_interval': 300, 'last_proxy': None,
+                'minimize_to_tray': True}
 
     def init_ui(self):
         self.setWindowTitle(tr('window_title', v=VERSION))
@@ -1412,6 +1435,9 @@ class ProxySwitcherPro(QMainWindow):
         lines = []
         for p in self.proxies:
             addr = f"{p.get('ip')}:{p.get('port')}"
+            login = str(p.get('login') or '')
+            if login:
+                addr = f"{login}:{p.get('password') or ''}@{addr}"
             ptype = str(p.get('type', 'HTTP')).upper()
             if ptype.startswith('SOCKS'):
                 addr = f"{ptype.lower()}://{addr}"
@@ -1468,7 +1494,7 @@ class ProxySwitcherPro(QMainWindow):
         try:
             import winreg
             import ctypes
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_SET_VALUE)
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE)
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
 
             if proxy.get('type', 'HTTP').upper().startswith('SOCKS'):
@@ -1476,8 +1502,20 @@ class ProxySwitcherPro(QMainWindow):
             else:
                 proxy_server = f"{proxy['ip']}:{proxy['port']}"
             winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_server)
+
+            # Локальные адреса мимо прокси; прежний список исключений сохраняем и вернём при выключении
+            try:
+                prev_override = winreg.QueryValueEx(key, "ProxyOverride")[0]
+            except OSError:
+                prev_override = ""
+            if prev_override != PROXY_OVERRIDE:
+                self.settings['proxy_override_backup'] = prev_override
+            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, PROXY_OVERRIDE)
             winreg.CloseKey(key)
+
+            # 39 - уведомить приложения о смене настроек, 37 - применить их сразу
             ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)
+            ctypes.windll.wininet.InternetSetOptionW(0, 37, 0, 0)
 
             self.proxy_enabled = True
             self.active_proxy = row
@@ -1501,10 +1539,14 @@ class ProxySwitcherPro(QMainWindow):
             import winreg
             import ctypes
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_SET_VALUE)
+            backup = self.settings.pop('proxy_override_backup', None)
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
             winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
+            if backup is not None:
+                winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, backup)
             winreg.CloseKey(key)
             ctypes.windll.wininet.InternetSetOptionW(0, 39, 0, 0)
+            ctypes.windll.wininet.InternetSetOptionW(0, 37, 0, 0)
 
             self.proxy_enabled = False
             self.active_proxy = None
@@ -1574,6 +1616,7 @@ class ProxySwitcherPro(QMainWindow):
             interval = interval_spin.value()
 
             self.settings['auto_rotate'] = enabled
+            self.settings['rotate_interval'] = interval
             self.rotate_timer_interval = interval
             self.save_settings()
 
@@ -1593,6 +1636,8 @@ class ProxySwitcherPro(QMainWindow):
     def update_my_ip(self):
         def check_ip():
             try:
+                # Намеренно без direct_proxies(): индикатор показывает IP, который видит интернет,
+                # т.е. exit IP при включённом системном прокси и реальный при выключенном
                 r = requests.get('https://api.ipify.org?format=json', timeout=3)
                 ip = r.json().get('ip', 'Unknown')
                 self.ip_updated.emit(ip)
